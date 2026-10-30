@@ -304,6 +304,8 @@ func buildHandler() http.Handler {
 	// 写真をまとめて小さくする（設定 photo_shrink・裏で動く・admin限定・2026-10-27）と、写真ごとの「⋯」から1枚（書ける人）。
 	protected.HandleFunc("/api/admin/photo-shrink", cms.PhotoShrinkAllAPIHandler)
 	protected.HandleFunc("/api/photo-shrink", cms.PhotoShrinkAPIHandler)
+	// 画像の簡易編集（回転・切り抜き・明るくする・元に戻す・書ける人・2026-10-30）。
+	protected.HandleFunc("/api/photo-edit", cms.PhotoEditAPIHandler)
 	// 表を探す（検索画面 assets/tables.html と AI の口・DBの日本語化 §7 の3段目）。
 	// **読めるページの行だけ**返す。自由な SQL は受けない（tables_query.go）。
 	protected.HandleFunc("/api/tables", cms.TablesAPIHandler)

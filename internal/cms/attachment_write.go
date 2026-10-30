@@ -34,6 +34,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -129,7 +130,10 @@ func saveAttachmentVersion(pageID, name string) error {
 	return page.WriteFileAtomic(dst, content, 0o644)
 }
 
-// attachmentVersions は添付の版を新しい順に返します（いまは試験だけが使う。控えを戻す口は無く、戻すのは手作業）。
+// attachmentVersions は添付の版を新しい順に返します（画像の簡易編集の「元に戻す」が使う——photo_edit.go。ほかの形式の控えを戻す口は無く、戻すのは手作業）。
+//
+// 名前は時刻で、同じ秒の2つ目からは `-1`・`-2` が付きます。名前のまま並べると `-1` が付かないものより前に来る
+// （`-` は `.` より小さい）ので、時刻と番号で比べます。点で始まる一時ファイルは版ではありません。
 func attachmentVersions(pageID, name string) []string {
 	dir := filepath.Join(page.AttachmentDir(pageID), attachmentVersionsDir, name)
 	entries, err := os.ReadDir(dir)
@@ -138,13 +142,22 @@ func attachmentVersions(pageID, name string) []string {
 	}
 	var out []string
 	for _, e := range entries {
-		if !e.IsDir() {
+		if !e.IsDir() && !strings.HasPrefix(e.Name(), ".") {
 			out = append(out, e.Name())
 		}
 	}
-	// 名前が時刻なので、逆順が新しい順。
-	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
-		out[i], out[j] = out[j], out[i]
+	key := func(n string) (string, int) {
+		stamp, rest, _ := strings.Cut(strings.TrimSuffix(n, filepath.Ext(n)), "-")
+		seq, _ := strconv.Atoi(rest)
+		return stamp, seq
 	}
+	sort.Slice(out, func(i, j int) bool {
+		si, ni := key(out[i])
+		sj, nj := key(out[j])
+		if si != sj {
+			return si > sj
+		}
+		return ni > nj
+	})
 	return out
 }

@@ -4899,11 +4899,68 @@
             (n.nodeType === 1 && (n.tagName === 'IMG' || n.tagName === 'BR')));
     }
 
-    // isCarouselItemBlock は、カルーセルの1枚にできる要素か——画像だけの段落か、ファイル表示（2026-10-23）。
+    // isCarouselItemBlock は、カルーセルの1枚にできる要素か——画像の段落（コメントつきも・2026-10-30）か、ファイル表示（2026-10-23）。
     // > 2026-10-23 利用者:「カルーセルにファイル参照も入れたい」
     function isCarouselItemBlock(el) {
-        return isImageOnlyBlock(el) || !!(el && el.tagName === 'SECTION' && el.getAttribute('data-type') === FILE_VIEW_TYPE);
+        return isImageOnlyBlock(el) || isImageCaptionBlock(el) || !!(el && el.tagName === 'SECTION' && el.getAttribute('data-type') === FILE_VIEW_TYPE);
     }
+
+    // ── 画像の下のコメント（2026-10-30） ──────────────────────────────
+    //
+    // 利用者:「画像の下にコメントを書く場所は確保できないでしょうか？これは、カルーセルを使う場合も入ってほしいです。」
+    // 本文の形は、画像の段落に続けて書いた文字です（`<p><img>コメント</p>`）。新しい入れ物を作らないので、書く・戻す・
+    // 2人が同時に書いたときの枠は、ふつうの段落と同じです。画像を行いっぱいに置く（display: block）と、文字は画像の下に来ます。
+    // 印の class（w-img-cap・w-img-nocap）は画面だけのものです（書き出しは属性の許可リストなので保存されない）。
+    // ⚠ 画像より前に文字がある段落（本文の中の小さな絵）は、コメントの形にしません。
+
+    // isImageCaptionBlock は、画像を1枚だけ頭に置いた段落か（続く文字がコメント）。
+    function isImageCaptionBlock(el) {
+        if (!el || el.tagName !== 'P' || el.closest('.vocab-chrome')) return false;
+        const kids = Array.from(el.childNodes).filter(n => !(n.nodeType === 3 && !n.textContent.trim()) && !(n.nodeType === 1 && n.classList.contains('vocab-chrome')));
+        return kids.length > 0 && kids[0].nodeType === 1 && kids[0].tagName === 'IMG' && el.querySelectorAll('img').length === 1;
+    }
+
+    // imageCaptionOf は画像の段落のコメント（無ければ空）を返します。
+    function imageCaptionOf(img) {
+        const p = img && img.parentElement;
+        return isImageCaptionBlock(p) ? p.textContent.trim() : '';
+    }
+
+    // refreshImageCaptions は印を合わせます（⚠ 変わるときだけ触る）。root を渡すと、その段落だけを見ます。
+    function refreshImageCaptions(root) {
+        const editor = document.getElementById('w-editor-content');
+        if (!editor) return;
+        const list = root ? [root] : Array.from(editor.querySelectorAll('p'));
+        list.forEach(p => {
+            const cap = isImageCaptionBlock(p);
+            const empty = cap && !p.textContent.trim();
+            if (p.classList.contains('w-img-cap') !== cap) p.classList.toggle('w-img-cap', cap);
+            if (p.classList.contains('w-img-nocap') !== empty) p.classList.toggle('w-img-nocap', empty);
+        });
+    }
+
+    document.addEventListener('input', e => {
+        const el = e.target instanceof Element ? e.target : null;
+        if (!el || !el.closest('#w-editor-content')) return;
+        const sel = window.getSelection();
+        const at = sel && sel.anchorNode ? (sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement) : null;
+        const p = at && at.closest('p');
+        if (p && p.querySelector(':scope > img')) refreshImageCaptions(p);
+    });
+    // 「コメントを書く」の案内を押すと、画像のすぐ後ろ（コメントの場所）へキャレットを置く。
+    document.addEventListener('click', e => {
+        if (!document.body.hasAttribute('edit-mode')) return;
+        const p = e.target instanceof Element && e.target.closest('#w-editor-content p.w-img-nocap');
+        if (!p || e.target.tagName === 'IMG') return;
+        const img = p.querySelector(':scope > img');
+        if (!img) return;
+        const r = document.createRange();
+        r.setStartAfter(img);
+        r.collapse(true);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(r);
+    });
 
     // nextImageBlocks は、カルーセルのすぐ下に続く「画像だけの段落」とファイル表示を返す（上の段なら包みごと・節の中ならその要素）。
     function nextImageBlocks(car) {
@@ -5024,6 +5081,7 @@
     function decorateCarousels() {
         const editor = document.getElementById('w-editor-content');
         if (!editor) return;
+        refreshImageCaptions();
         const isEdit = document.body.hasAttribute('edit-mode');
         editor.querySelectorAll('section[data-type="' + CAROUSEL_TYPE + '"]').forEach(car => {
             if (car.closest('.vocab-chrome')) return;
@@ -5075,9 +5133,31 @@
     // 閲覧モードで本文の画像を押すと画面いっぱいに開く。‹ ›・← →・横に払う で同じページの画像を前後に、Esc・✕・外側で閉じる。
     // 数えるのは本文の画像——リンクやボタンの中・鏡やファイル表示（クローム）の中は除く。カルーセルの中は隠れている枚も入る
     // （閉じたとき、最後に見ていた画像がカルーセルの中ならその枚を見せる）。
+    //
+    // 部分の拡大と簡易編集（2026-10-30）:
+    // 利用者:「拡大表示はクリックやタッチした部分を中心に押すたびに少しずつ拡大するようなイメージです。」
+    // 「簡易編集機能は、90度ずつの回転、切り抜き、画像を明るくするが欲しいです」
+    // 「拡大表示は保存が必要なく、編集機能は無条件に保存が必要です。したがって編集時のアンドゥも必要かと思われます。」
+    //   - 部分の拡大は画面だけです（CSS の transform・保存しない）。押した所が画面の真ん中へ来るように、押すたびに lbZoomStep 倍。
+    //     拡大しているあいだは、なぞると動かせます。「元の大きさ」で戻します（前後へ送っても戻る）。
+    //   - 簡易編集は押すたびに保存します（POST /api/photo-edit・internal/cms/photo_edit.go）。↶ で1つずつ戻します。
+    //     ✏ 編集が出るのは、書き換えてよい JPEG・PNG だけです（GET の can_edit）。
+    //   - 切り抜きは、なぞった範囲を画像に対する割合で送ります（拡大したまま選べます）。
     let lightboxList = [];
     let lightboxAt = 0;
     let lightboxSwipe = null;
+    let lbZoom = { z: 1, tx: 0, ty: 0 };
+    let lbPointer = null;     // 押している指・マウス（x, y・動かしたか・動かし始めの位置）
+    let lbMovedLast = false;  // 直前の押し込みで動かしたか（動かしたあとの click は拡大にしない）
+    let lbPhoto = null;       // いまの画像の編集の様子 { ref, url, v, canEdit, canUndo }
+    let lbEditing = false;
+    let lbCrop = null;        // 切り抜きでなぞった範囲 { x0, y0, x1, y1 }（画面の座標）
+    let lbCropping = false;
+    let lbBusy = false;
+    let lbShowToken = 0;
+    const lbZoomStep = 1.4;
+    const lbZoomMax = 8;
+    const lbMoveSlop = 8; // これより動いたら「押した」ではなく「なぞった」
 
     // カルーセルの中のファイル表示の画像（img.file-view-slide-img・2026-10-23）も、本文の画像と同じく数える——サーバーが描く飾りの中だが、
     // カルーセルの1枚なので押せば拡大して前後に送れるようにする。
@@ -5107,26 +5187,274 @@
         };
         const fig = makeEl('figure', 'lb-figure');
         const img = makeEl('img', 'lb-img');
+        img.draggable = false;
+        img.addEventListener('dragstart', e => e.preventDefault());
+        img.addEventListener('click', e => {
+            e.stopPropagation();
+            if (lbCropping || lbMovedLast) return;
+            lbZoomAt(e.clientX, e.clientY);
+        });
         const cap = makeEl('figcaption', 'lb-caption');
         fig.append(img, cap);
         const count = makeEl('div', 'lb-count');
+        const tools = makeEl('div', 'lb-tools');
+        const viewTools = makeEl('div', 'lb-view-tools');
+        viewTools.append(
+            btn('lb-zoom-out', '－', '1段小さくする', () => lbZoomOut()),
+            btn('lb-zoom-reset', '元の大きさ', '拡大をやめて、画面に収まる大きさへ戻します', () => lbResetZoom()),
+            btn('lb-edit-toggle', '✏ 編集', '回転・切り抜き・明るくする（押すたびに保存します）', () => lbSetEditing(!lbEditing)));
+        const editTools = makeEl('div', 'lb-edit-tools');
+        editTools.append(
+            btn('lb-rotate-left', '⟲ 左へ', '左へ90度回して保存します', () => lbEdit({ op: 'rotate-left' })),
+            btn('lb-rotate-right', '⟳ 右へ', '右へ90度回して保存します', () => lbEdit({ op: 'rotate-right' })),
+            btn('lb-crop-start', '✂ 切り抜き', '範囲を選んで切り抜きます', () => lbStartCrop()),
+            btn('lb-brighten', '☀ 明るく', '1段明るくして保存します', () => lbEdit({ op: 'brighten' })),
+            btn('lb-undo', '↶ 元に戻す', '1つ前の中身へ戻します', () => lbEdit({ op: 'undo' })));
+        const cropTools = makeEl('div', 'lb-crop-tools');
+        cropTools.append(
+            makeEl('span', 'lb-crop-hint', '残す範囲をなぞってください'),
+            btn('lb-crop-do', '✂ 切り抜く', '選んだ範囲を切り抜いて保存します', () => lbApplyCrop()),
+            btn('lb-crop-cancel', 'やめる', '切り抜きをやめます', () => lbEndCrop()));
+        const msg = makeEl('div', 'lb-msg');
+        tools.append(viewTools, editTools, cropTools, msg);
+        const cropRect = makeEl('div', 'lb-crop-rect is-hidden');
         box.append(btn('lb-close', '✕', '閉じる（Esc）', closeLightbox),
             btn('lb-prev', '‹', '前の画像（←）', () => showLightbox(lightboxAt - 1)),
             fig,
             btn('lb-next', '›', '次の画像（→）', () => showLightbox(lightboxAt + 1)),
-            count);
-        // 外側（画像と道具の外）を押すと閉じる。
-        box.addEventListener('click', e => { if (e.target === box || e.target === fig) closeLightbox(); });
-        box.addEventListener('pointerdown', e => { lightboxSwipe = e.pointerType === 'mouse' ? null : { x: e.clientX, y: e.clientY }; });
-        box.addEventListener('pointerup', e => {
+            count, tools, cropRect);
+        // 外側（画像と道具の外）を押すと閉じる（拡大中・編集中は閉じない——なぞった指が外れて閉じないように）。
+        box.addEventListener('click', e => {
+            if (lbZoom.z > 1 || lbEditing || lbCropping || lbMovedLast) return;
+            if (e.target === box || e.target === fig) closeLightbox();
+        });
+        box.addEventListener('pointerdown', e => {
+            if (e.target instanceof Element && e.target.closest('button, .lb-tools')) { lbPointer = null; return; }
+            lbMovedLast = false;
+            lbPointer = { id: e.pointerId, x: e.clientX, y: e.clientY, tx: lbZoom.tx, ty: lbZoom.ty, moved: false };
+            lightboxSwipe = e.pointerType === 'mouse' || lbZoom.z > 1 || lbCropping ? null : { x: e.clientX, y: e.clientY };
+            if (lbCropping) {
+                lbCrop = { x0: e.clientX, y0: e.clientY, x1: e.clientX, y1: e.clientY };
+                lbDrawCrop();
+            }
+        });
+        box.addEventListener('pointermove', e => {
+            const p = lbPointer;
+            if (!p || p.id !== e.pointerId) return;
+            const dx = e.clientX - p.x, dy = e.clientY - p.y;
+            if (!p.moved && Math.hypot(dx, dy) >= lbMoveSlop) {
+                p.moved = true;
+                // 動かし始めてから掴む（掴むと click が box へ行くので、押しただけのときは掴まない）。
+                if (lbCropping || lbZoom.z > 1) { try { box.setPointerCapture(e.pointerId); } catch (_) { /* 指が離れたあと */ } }
+            }
+            if (lbCropping) {
+                if (lbCrop) { lbCrop.x1 = e.clientX; lbCrop.y1 = e.clientY; lbDrawCrop(); }
+            } else if (p.moved && lbZoom.z > 1) {
+                box.classList.add('lb-panning');
+                lbZoom.tx = p.tx + dx;
+                lbZoom.ty = p.ty + dy;
+                lbApplyZoom();
+            }
+        });
+        const endPointer = (e, canceled) => {
+            const p = lbPointer;
+            if (!p || p.id !== e.pointerId) return;
+            lbPointer = null;
+            lbMovedLast = p.moved;
+            box.classList.remove('lb-panning');
             const s = lightboxSwipe;
             lightboxSwipe = null;
-            if (!s) return;
+            if (canceled || !s) return;
             const dx = e.clientX - s.x, dy = e.clientY - s.y;
             if (Math.abs(dx) >= 40 && Math.abs(dx) >= Math.abs(dy)) showLightbox(lightboxAt + (dx < 0 ? 1 : -1));
-        });
+        };
+        box.addEventListener('pointerup', e => endPointer(e, false));
+        box.addEventListener('pointercancel', e => endPointer(e, true));
+        window.addEventListener('resize', () => { if (!box.classList.contains('is-hidden')) { lbResetZoom(); if (lbCropping) lbEndCrop(); } });
         document.body.appendChild(box);
         return box;
+    }
+
+    // lbClampCenter は、拡大した絵の真ん中の位置を丸めます（絵の外が空かないように。画面より小さい向きは真ん中に置く）。
+    function lbClampCenter(center, half, view) {
+        if (half * 2 <= view) return view / 2;
+        return Math.min(half, Math.max(view - half, center));
+    }
+
+    // lbBaseOf は、拡大する前の絵の真ん中と大きさを返します（offset は transform の影響を受けない。#w-lightbox は画面の左上にある）。
+    function lbBaseOf(img) {
+        return { x: img.offsetLeft + img.offsetWidth / 2, y: img.offsetTop + img.offsetHeight / 2, w: img.offsetWidth, h: img.offsetHeight };
+    }
+
+    function lbApplyZoom() {
+        const box = lightboxEl();
+        const img = box.querySelector('.lb-img');
+        if (lbZoom.z <= 1) {
+            lbZoom = { z: 1, tx: 0, ty: 0 };
+            img.style.transform = '';
+        } else {
+            const c = lbBaseOf(img);
+            lbZoom.tx = lbClampCenter(c.x + lbZoom.tx, c.w * lbZoom.z / 2, window.innerWidth) - c.x;
+            lbZoom.ty = lbClampCenter(c.y + lbZoom.ty, c.h * lbZoom.z / 2, window.innerHeight) - c.y;
+            img.style.transform = 'translate(' + lbZoom.tx + 'px, ' + lbZoom.ty + 'px) scale(' + lbZoom.z + ')';
+        }
+        box.classList.toggle('lb-zoomed', lbZoom.z > 1);
+        setHidden(box.querySelector('.lb-zoom-out'), lbZoom.z <= 1);
+        setHidden(box.querySelector('.lb-zoom-reset'), lbZoom.z <= 1);
+    }
+
+    // lbZoomAt は、押した所が画面の真ん中へ来るように1段拡大します。
+    function lbZoomAt(cx, cy) {
+        const c = lbBaseOf(lightboxEl().querySelector('.lb-img'));
+        if (!c.w || !c.h) return;
+        const u = (cx - (c.x + lbZoom.tx)) / lbZoom.z, v = (cy - (c.y + lbZoom.ty)) / lbZoom.z; // 押した所（拡大する前の絵の真ん中から）
+        const z = Math.min(lbZoomMax, lbZoom.z * lbZoomStep);
+        lbZoom = { z, tx: window.innerWidth / 2 - u * z - c.x, ty: window.innerHeight / 2 - v * z - c.y };
+        lbApplyZoom();
+    }
+
+    function lbZoomOut() {
+        const z = lbZoom.z / lbZoomStep;
+        lbZoom.z = z < 1.01 ? 1 : z;
+        lbApplyZoom();
+    }
+
+    function lbResetZoom() {
+        lbZoom = { z: 1, tx: 0, ty: 0 };
+        lbApplyZoom();
+    }
+
+    function lbSay(text) { lightboxEl().querySelector('.lb-msg').textContent = text || ''; }
+
+    // lbRefreshTools は編集の道具の出し入れを合わせます。
+    function lbRefreshTools() {
+        const box = lightboxEl();
+        const canEdit = !!(lbPhoto && lbPhoto.canEdit);
+        const editing = lbEditing && canEdit;
+        const toggle = box.querySelector('.lb-edit-toggle');
+        setHidden(toggle, !canEdit || lbCropping);
+        toggle.textContent = editing ? '✓ 編集を終わる' : '✏ 編集';
+        box.classList.toggle('lb-editing', editing);
+        box.classList.toggle('lb-cropping', lbCropping);
+        setHidden(box.querySelector('.lb-edit-tools'), !editing || lbCropping);
+        setHidden(box.querySelector('.lb-crop-tools'), !lbCropping);
+        box.querySelectorAll('.lb-edit-tools button').forEach(b => { b.disabled = lbBusy; });
+        box.querySelector('.lb-undo').disabled = lbBusy || !(lbPhoto && lbPhoto.canUndo);
+        box.querySelector('.lb-crop-do').disabled = lbBusy || !lbCropBox();
+    }
+
+    function lbSetEditing(on) {
+        lbEditing = on;
+        lbEndCrop();
+        lbSay('');
+        lbRefreshTools();
+    }
+
+    // lbLoadPhotoState は、いまの画像を編集できるかを聞きます（ログインしていれば）。
+    async function lbLoadPhotoState(url) {
+        const token = ++lbShowToken;
+        lbPhoto = null;
+        lbRefreshTools();
+        const m = /^\/([0-9]{6})\/([0-9A-Za-z]+)\.(jpe?g|png)$/i.exec(url);
+        if (!m || !currentUsername) return;
+        const ref = m[1] + '-' + m[2];
+        try {
+            const res = await fetch('/api/photo-edit?ref=' + encodeURIComponent(ref), { credentials: 'same-origin' });
+            const d = await res.json().catch(() => ({}));
+            if (token !== lbShowToken || !res.ok) return;
+            lbPhoto = { ref, url, v: d.v || '', canEdit: !!d.can_edit, canUndo: !!d.can_undo };
+            lbRefreshTools();
+        } catch (e) {
+            console.warn('画像の編集の様子を読めません:', e);
+        }
+    }
+
+    // lbEdit は操作を1回送って保存します（送っているあいだは押せない）。断られたときも、いまの版の印で描き直します。
+    async function lbEdit(body) {
+        if (lbBusy || !lbPhoto) return;
+        lbBusy = true;
+        lbSay('保存しています…');
+        lbRefreshTools();
+        const photo = lbPhoto;
+        try {
+            const res = await fetch('/api/photo-edit', jsonPost(Object.assign({ ref: photo.ref, v: photo.v }, body)));
+            const d = await res.json().catch(() => ({}));
+            if (d.v) {
+                if (d.v !== photo.v) {
+                    repointPhoto(photo.url, d.v);
+                    if (lbPhoto === photo) { lbShowImage(); lbResetZoom(); }
+                }
+                photo.v = d.v;
+                photo.canEdit = !!d.can_edit;
+                photo.canUndo = !!d.can_undo;
+            }
+            if (res.ok && d.success) {
+                lbSay(body.op === 'undo' ? '1つ前へ戻しました' : '保存しました（↶ で戻せます）');
+                if (lbCropping) lbEndCrop();
+            } else {
+                lbSay(d.message || ('保存できません（' + res.status + '）'));
+            }
+        } catch (e) {
+            lbSay('保存できません: ' + e.message);
+        } finally {
+            lbBusy = false;
+            lbRefreshTools();
+        }
+    }
+
+    function lbStartCrop() {
+        lbCropping = true;
+        lbCrop = null;
+        lbDrawCrop();
+        lbSay('');
+        lbRefreshTools();
+    }
+
+    function lbEndCrop() {
+        lbCropping = false;
+        lbCrop = null;
+        lbDrawCrop();
+        lbRefreshTools();
+    }
+
+    // lbCropBox は、なぞった範囲を絵の見えている所へ丸めて返します（無い・小さすぎるときは null）。
+    function lbCropBox() {
+        if (!lbCrop) return null;
+        const r = lightboxEl().querySelector('.lb-img').getBoundingClientRect();
+        const l = Math.max(r.left, 0, Math.min(lbCrop.x0, lbCrop.x1)), t = Math.max(r.top, 0, Math.min(lbCrop.y0, lbCrop.y1));
+        const e = Math.min(r.right, window.innerWidth, Math.max(lbCrop.x0, lbCrop.x1)), b = Math.min(r.bottom, window.innerHeight, Math.max(lbCrop.y0, lbCrop.y1));
+        return e - l >= lbMoveSlop && b - t >= lbMoveSlop ? { l, t, w: e - l, h: b - t, r } : null;
+    }
+
+    function lbDrawCrop() {
+        const box = lightboxEl();
+        const el = box.querySelector('.lb-crop-rect');
+        const c = lbCropping ? lbCropBox() : null;
+        setHidden(el, !c);
+        if (c) {
+            el.style.left = c.l + 'px';
+            el.style.top = c.t + 'px';
+            el.style.width = c.w + 'px';
+            el.style.height = c.h + 'px';
+        }
+        box.querySelector('.lb-crop-do').disabled = lbBusy || !c;
+    }
+
+    function lbApplyCrop() {
+        const c = lbCropBox();
+        if (!c) return;
+        lbEdit({ op: 'crop', x: (c.l - c.r.left) / c.r.width, y: (c.t - c.r.top) / c.r.height, w: c.w / c.r.width, h: c.h / c.r.height });
+    }
+
+    // lbShowImage は、いまの枚の絵と説明を出します。本文の写真は表示用の写し（?view=1・internal/cms/photo_view.go）——
+    // 拡大表示は元の写真を出す（2026-10-27）。説明は画像の下のコメント（無ければ画像の名前・2026-10-30）。
+    function lbShowImage() {
+        const src = lightboxList[lightboxAt];
+        const box = lightboxEl();
+        const img = box.querySelector('.lb-img');
+        img.src = (src.getAttribute('src') || '').replace('?view=1&', '?');
+        img.alt = src.getAttribute('alt') || '';
+        box.querySelector('.lb-caption').textContent = imageCaptionOf(src) || src.getAttribute('alt') || '';
     }
 
     function showLightbox(i) {
@@ -5134,15 +5462,17 @@
         lightboxAt = ((i % lightboxList.length) + lightboxList.length) % lightboxList.length;
         const src = lightboxList[lightboxAt];
         const box = lightboxEl();
-        const img = box.querySelector('.lb-img');
-        // 本文の写真は表示用の写し（?view=1・internal/cms/photo_view.go）——拡大表示は元の写真を出す（2026-10-27）。
-        img.src = (src.getAttribute('src') || '').replace('?view=1&', '?');
-        img.alt = src.getAttribute('alt') || '';
-        box.querySelector('.lb-caption').textContent = src.getAttribute('alt') || '';
+        lbCropping = false;
+        lbCrop = null;
+        lbDrawCrop();
+        lbSay('');
+        lbShowImage();
+        lbResetZoom();
         box.querySelector('.lb-count').textContent = (lightboxAt + 1) + ' / ' + lightboxList.length;
         const many = lightboxList.length > 1;
         setHidden(box.querySelector('.lb-prev'), !many);
         setHidden(box.querySelector('.lb-next'), !many);
+        lbLoadPhotoState((src.getAttribute('src') || '').split(/[?#]/)[0]);
     }
 
     function openLightbox(img) {
@@ -5152,6 +5482,7 @@
         const box = lightboxEl();
         setHidden(box, false);
         document.body.classList.add('w-lightbox-open');
+        lbEditing = false;
         showLightbox(i);
         box.querySelector('.lb-close').focus({ preventScroll: true });
     }
@@ -5161,6 +5492,10 @@
         if (!box || box.classList.contains('is-hidden')) return;
         setHidden(box, true);
         document.body.classList.remove('w-lightbox-open');
+        lbEditing = false;
+        lbCropping = false;
+        lbCrop = null;
+        lbShowToken++;
         // 最後に見ていた画像がカルーセルの中なら、その枚が帯の左端に来るまで巻いておく。
         const last = lightboxList[lightboxAt];
         const car = last && last.closest('section[data-type="' + CAROUSEL_TYPE + '"]');
@@ -5181,8 +5516,12 @@
     document.addEventListener('keydown', e => {
         const box = document.getElementById('w-lightbox');
         if (!box || box.classList.contains('is-hidden')) return;
-        if (e.key === 'Escape') { e.preventDefault(); closeLightbox(); }
-        else if (e.key === 'ArrowLeft') { e.preventDefault(); showLightbox(lightboxAt - 1); }
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            if (lbCropping) lbEndCrop(); else closeLightbox();
+        } else if (lbCropping) {
+            return;
+        } else if (e.key === 'ArrowLeft') { e.preventDefault(); showLightbox(lightboxAt - 1); }
         else if (e.key === 'ArrowRight') { e.preventDefault(); showLightbox(lightboxAt + 1); }
     });
 
@@ -6535,15 +6874,19 @@
             }
             notify('写真を小さくしました（' + mb(d.before) + ' → ' + mb(d.after) + '・' + d.from + ' → ' + d.to + '）');
             await fetch(url, { cache: 'reload', credentials: 'same-origin' }).catch(() => {});
-            // 住所には版の印（?v=）が付いているので、印を外して比べ、新しい印の住所で描き直す（2026-10-27 からは書ける形でも
-            // 印を使う——書き出すときに serializeAttrs が外す）。
-            document.querySelectorAll('img').forEach((img) => {
-                const cur = img.getAttribute('src') || '';
-                if (cur.split(/[?#]/)[0] === url) img.src = d.v ? url + (cur.includes('view=1') ? '?view=1&v=' : '?v=') + d.v : url;
-            });
+            repointPhoto(url, d.v);
         } catch (e) {
             notify('写真を小さくできません: ' + e.message, { type: 'warn' });
         }
+    }
+
+    // repointPhoto は、同じ住所の絵を新しい版の印で描き直します。住所には版の印（?v=）が付いているので、印を外して比べます
+    // （2026-10-27 からは書ける形でも印を使う——書き出すときに serializeAttrs が外す）。
+    function repointPhoto(url, v) {
+        document.querySelectorAll('img').forEach((img) => {
+            const cur = img.getAttribute('src') || '';
+            if (cur.split(/[?#]/)[0] === url) img.src = v ? url + (cur.includes('view=1') ? '?view=1&v=' : '?v=') + v : url;
+        });
     }
 
     function mb(bytes) { return (Number(bytes || 0) / 1e6).toFixed(1) + ' MB'; }

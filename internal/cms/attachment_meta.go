@@ -85,6 +85,11 @@ type AttachmentMeta struct {
 	// ShrunkFrom は写真を小さくする前の事実です（2026-10-27・photo_shrink.go）。縮めていなければ nil。
 	// 2回縮めても、いちばん初めの形を残します（中身の指紋で同じ写真かを確かめる道具が、元の写真を見分けられるように）。
 	ShrunkFrom *ShrunkPhoto `json:"shrunk_from,omitempty"`
+	// EditedFrom は画像の簡易編集（2026-10-30・photo_edit.go）の前の中身の指紋です。編集していなければ空。
+	// 何度編集しても、いちばん初めの指紋を残します（ShrunkFrom と同じ理由）。編集の前まで戻すと消えます。
+	EditedFrom string `json:"edited_from,omitempty"`
+	EditedAt   string `json:"edited_at,omitempty"` // 最後に編集した時刻（RFC 3339）
+	EditedBy   string `json:"edited_by,omitempty"` // 最後に編集した利用者
 }
 
 // ShrunkPhoto は縮める前の写真の事実です。

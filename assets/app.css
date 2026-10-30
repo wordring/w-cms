@@ -2228,13 +2228,50 @@ body.w-lightbox-open { overflow: hidden; }
 }
 #w-lightbox button:hover { background: rgba(255, 255, 255, 0.25); }
 #w-lightbox .lb-close { position: absolute; top: 8px; right: 12px; width: 44px; height: 44px; font-size: 22px; }
-#w-lightbox .lb-prev, #w-lightbox .lb-next { width: 44px; height: 72px; font-size: 32px; margin: 0 6px; flex: 0 0 auto; }
+#w-lightbox .lb-prev, #w-lightbox .lb-next { width: 44px; height: 72px; font-size: 32px; margin: 0 6px; flex: 0 0 auto; position: relative; z-index: 2; }
+#w-lightbox .lb-close { z-index: 3; }
+#w-lightbox .lb-count { z-index: 3; }
 @media (max-width: 600px) {
     #w-lightbox .lb-figure { max-width: 100vw; }
     #w-lightbox .lb-prev, #w-lightbox .lb-next { position: absolute; bottom: 16px; }
     #w-lightbox .lb-prev { left: 16px; }
     #w-lightbox .lb-next { right: 16px; }
 }
+/* 部分の拡大と簡易編集（2026-10-30）。拡大は transform（動かすあいだは動きを切る）。切り抜きの範囲の外は box-shadow で暗くする。 */
+#w-lightbox .lb-img { cursor: zoom-in; transition: transform 0.15s ease-out; user-select: none; -webkit-user-select: none; }
+#w-lightbox.lb-zoomed, #w-lightbox.lb-cropping { touch-action: none; }
+#w-lightbox.lb-panning .lb-img { transition: none; cursor: grabbing; }
+#w-lightbox.lb-cropping, #w-lightbox.lb-cropping .lb-img { cursor: crosshair; }
+#w-lightbox .lb-tools {
+    position: absolute; top: 8px; left: 64px; right: 64px; z-index: 3;
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px;
+}
+#w-lightbox .lb-view-tools, #w-lightbox .lb-edit-tools, #w-lightbox .lb-crop-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px; }
+#w-lightbox .lb-tools button { min-height: 36px; padding: 0 10px; font-size: 14px; background: rgba(30, 41, 59, 0.9); border: 1px solid rgba(255, 255, 255, 0.25); }
+#w-lightbox .lb-tools button:hover:not(:disabled) { background: rgba(71, 85, 105, 0.95); }
+#w-lightbox .lb-tools button:disabled { opacity: 0.45; cursor: default; }
+#w-lightbox .lb-crop-hint { color: #e2e8f0; font-size: 13px; }
+#w-lightbox .lb-msg { color: #fde68a; font-size: 13px; width: 100%; text-align: center; }
+#w-lightbox .lb-msg:empty { display: none; }
+#w-lightbox .lb-crop-rect {
+    position: fixed; z-index: 2; pointer-events: none; border: 1px solid #fff;
+    box-shadow: 0 0 0 9999px rgba(15, 23, 42, 0.6);
+}
+#w-lightbox.lb-editing .lb-figure { padding-top: 40px; }
+#w-lightbox.lb-editing .lb-img { max-height: calc(100vh - 150px); }
+@media (max-width: 600px) {
+    #w-lightbox .lb-tools { top: 52px; left: 8px; right: 8px; }
+    #w-lightbox .lb-figure { padding-top: 40px; }
+    #w-lightbox .lb-img { max-height: calc(100vh - 190px); }
+    #w-lightbox.lb-editing .lb-figure { padding-top: 100px; }
+    #w-lightbox.lb-editing .lb-img { max-height: calc(100vh - 280px); }
+}
+
+/* 画像の下のコメント（2026-10-30・assets/app.js の「画像の下のコメント」）。本文は <p><img>コメント</p>。 */
+#w-editor-content p.w-img-cap { font-size: 13px; color: #475569; }
+#w-editor-content p.w-img-cap > img { display: block; }
+body[edit-mode] #w-editor-content p.w-img-nocap::after { content: 'コメントを書く'; display: block; color: #94a3b8; cursor: text; }
+#w-editor-content section[data-type="carousel"] > p.w-img-cap { width: min-content; overflow-wrap: anywhere; }
 
 /* ── 帯のブロックの種類（2026-10-07・assets/app.js の「ブロックの種類を替える」） ──
    いまの種類は青い背景（押した印）。文字のブロックの外では押せない（薄く）。スマホの帯は上の端に全幅の1列（上の .is-docked）。 */
