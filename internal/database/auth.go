@@ -66,7 +66,27 @@ var AuthTables = []string{
 		username TEXT NOT NULL,
 		created_at DATETIME NOT NULL,
 		expires_at DATETIME NOT NULL,
-		last_seen DATETIME NOT NULL
+		last_seen DATETIME NOT NULL,
+		device_id INTEGER
+	);`,
+
+	// 登録した端末（2026-10-31・internal/auth/device.go）。印はハッシュだけを置く。
+	`CREATE TABLE IF NOT EXISTS devices (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		username TEXT NOT NULL,
+		token_hash TEXT UNIQUE NOT NULL,
+		name TEXT NOT NULL,
+		created_at DATETIME NOT NULL,
+		last_seen DATETIME NOT NULL,
+		last_ip TEXT NOT NULL DEFAULT ''
+	);`,
+
+	// ほかの端末を足すための一回限りの番号（1人に1つ）。
+	`CREATE TABLE IF NOT EXISTS device_codes (
+		username TEXT PRIMARY KEY,
+		code_hash TEXT NOT NULL,
+		expires_at DATETIME NOT NULL,
+		fails INTEGER NOT NULL DEFAULT 0
 	);`,
 
 	// ログイン失敗の記録（総当たり対策）。
@@ -100,5 +120,18 @@ func CreateAuthTables(db *sql.DB) error {
 			return err
 		}
 	}
-	return nil
+	return addSessionDeviceColumn(db)
+}
+
+// addSessionDeviceColumn は、前からある auth.db の sessions に device_id を足します（2026-10-31。CREATE TABLE IF NOT EXISTS では足されない）。
+func addSessionDeviceColumn(db *sql.DB) error {
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name = 'device_id'`).Scan(&n); err != nil {
+		return err
+	}
+	if n > 0 {
+		return nil
+	}
+	_, err := db.Exec(`ALTER TABLE sessions ADD COLUMN device_id INTEGER`)
+	return err
 }

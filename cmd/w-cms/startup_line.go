@@ -42,6 +42,7 @@ func effectiveSettingsLine(cert, key string) string {
 		"・メールのアプリ登録 " + has("WCMS_MAIL_CLIENT_ID") +
 		// 2026-10-14 より後に増えた設定（2026-10-30 に足した）。どれも有無だけ。
 		"・信じるプロキシ " + has("WCMS_TRUSTED_PROXIES") +
+		"・社外の未登録の端末を断る " + onOff(auth.DeviceRequired()) +
 		"・中の入口 " + has("WCMS_LOCAL_SOCKET") +
 		"・機械の入口の鍵 " + has("WCMS_MACHINE_TOKEN") +
 		"・機械の書き手 " + has("WCMS_MACHINE_USER") +

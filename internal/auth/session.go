@@ -46,6 +46,11 @@ func hashToken(token string) string {
 // CreateSession は新しいセッションを発行し、平文トークンを返します。
 // ログインは操作なので、最後の操作の時刻はログインの時刻です。
 func CreateSession(username string) (string, error) {
+	return createSessionOn(username, 0)
+}
+
+// createSessionOn は CreateSession と同じで、セッションを端末 deviceID に結びます（0 なら結ばない・device.go）。
+func createSessionOn(username string, deviceID int64) (string, error) {
 	raw := make([]byte, sessionTokenBytes)
 	if _, err := rand.Read(raw); err != nil {
 		return "", err
@@ -57,8 +62,8 @@ func CreateSession(username string) (string, error) {
 	// ブラウザの行が増え続けた。失敗しても発行は止めない。
 	database.AuthDB.Exec(`DELETE FROM sessions WHERE last_seen < ?`, now.Add(-SessionIdleTTL))
 	_, err := database.AuthDB.Exec(
-		`INSERT INTO sessions (token_hash, username, created_at, expires_at, last_seen) VALUES (?, ?, ?, ?, ?)`,
-		hashToken(token), username, now, now.Add(SessionIdleTTL), now,
+		`INSERT INTO sessions (token_hash, username, created_at, expires_at, last_seen, device_id) VALUES (?, ?, ?, ?, ?, ?)`,
+		hashToken(token), username, now, now.Add(SessionIdleTTL), now, sql.NullInt64{Int64: deviceID, Valid: deviceID != 0},
 	)
 	if err != nil {
 		return "", err

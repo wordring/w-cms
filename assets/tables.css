@@ -36,3 +36,9 @@ td.multiline { white-space: pre-wrap; }
   body { padding: 12px; }
   .where-row input { width: 9em; }
 }
+
+/* 端末の登録の画面（assets/devices.html・2026-10-31）。 */
+.dev-h2 { font-size: 1rem; margin: 0 0 8px; }
+.dev-msg { font-size: 13px; margin: 8px 0 0; min-height: 1em; }
+.dev-msg.error { color: #b91c1c; }
+.dev-code { font-size: 1.3rem; letter-spacing: .1em; }

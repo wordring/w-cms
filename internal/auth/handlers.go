@@ -40,12 +40,20 @@ const loginPageHTML = `<!DOCTYPE html>
     <input id="username" name="username" autocomplete="username" autofocus required>
     <label for="password">パスワード</label>
     <input id="password" name="password" type="password" autocomplete="current-password" required>
+    %device%
     <input type="hidden" name="next" value="%next%">
     <button type="submit">ログイン</button>
     %s
   </form>
 </body>
 </html>`
+
+// loginDeviceFields は、社外の登録のない端末に足す欄です（一回限りの番号で端末を足す・device.go）。
+const loginDeviceFields = `<p class="device-note">この端末は登録されていません。社内で登録するか、登録済みの端末で番号を出して、ここに入れてください。</p>
+    <label for="device_code">番号</label>
+    <input id="device_code" name="device_code" inputmode="numeric" autocomplete="one-time-code">
+    <label for="device_name">この端末の名前（例: 家のパソコン）</label>
+    <input id="device_name" name="device_name" maxlength="60">`
 
 // LoginPageHandler はログインフォームを表示します（GET /login、認証不要）。
 func LoginPageHandler(w http.ResponseWriter, r *http.Request) {
@@ -56,6 +64,10 @@ func LoginPageHandler(w http.ResponseWriter, r *http.Request) {
 		// 続けて失敗したあとの待ち（バックオフ・ロックアウト）——パスワードは確かめていない（2026-10-01）。
 		// 「違います」と言うと、正しく打ち直した人が打ち間違いだと思い込むので、待つように言う。
 		errMsg = `<div class="error">続けて失敗したので、しばらく待ってからもう一度お試しください。</div>`
+	case "device":
+		errMsg = `<div class="error">この端末は登録されていないので、社外からはログインできません。</div>`
+	case "code":
+		errMsg = `<div class="error">番号が違うか、切れています。登録済みの端末で番号を出し直してください。</div>`
 	default:
 		errMsg = `<div class="error">ユーザー名またはパスワードが違います。</div>`
 	}
@@ -64,6 +76,11 @@ func LoginPageHandler(w http.ResponseWriter, r *http.Request) {
 	next := safeNextPath(r.URL.Query().Get("next"))
 	// 先に知らせを入れてから戻り先を入れる（戻り先に「%s」が入っていると、知らせが value の中へ入って欄が壊れた・2026-10-22 の見直し）。
 	body := strings.Replace(loginPageHTML, "%s", errMsg, 1)
+	deviceFields := ""
+	if IsFromTrustedProxy(r) && deviceOfRequest(r) == nil {
+		deviceFields = loginDeviceFields
+	}
+	body = strings.Replace(body, "%device%", deviceFields, 1)
 	body = strings.Replace(body, "%next%", html.EscapeString(next), 1)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Write([]byte(body))
@@ -110,32 +127,79 @@ func LoginAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := AuthenticateFrom(username, password, clientIP(r))
 	// 失敗しても戻り先は保つ（打ち間違いのたびに目的地を見失わないため）。
 	next := safeNextPath(r.FormValue("next"))
+	failTo := func(code string) {
+		http.Redirect(w, r, "/login?error="+code+"&next="+url.QueryEscape(next), http.StatusFound)
+	}
+
+	// 端末の確かめ（device.go）。社外の登録のない端末は、パスワードを確かめる前に断る——総当たりでも、合っているかが分からない。
+	ip := clientIP(r)
+	outside := IsFromTrustedProxy(r)
+	sweepUnusedDevices()
+	device := deviceOfRequest(r)
+	if device != nil && device.Username != username {
+		device = nil
+	}
+	code := normalizeDeviceCode(r.FormValue("device_code"))
+	useCode := outside && device == nil && code != ""
+	if useCode && !checkDeviceCode(username, code) {
+		failTo("code")
+		return
+	}
+	if outside && device == nil && !useCode && DeviceRequired() {
+		auditDeviceRefused(username, ip)
+		failTo("device")
+		return
+	}
+
+	user, err := AuthenticateFrom(username, password, ip)
 	if err != nil {
 		// 失敗も記録する。総当たりや、辞めた人の試行が見えるのはここだけ。
 		// 入力されたパスワードは記録しない（記録そのものが漏洩経路になる）。
 		// 止められているあいだの試行は記録しない（2026-10-30。パスワードを確かめずに速く断るので、外から1秒に何百行でも監査を
 		// 増やせた）。止まるまでの失敗は残るので、総当たりは見える。
-		code := "1"
+		errCode := "1"
 		if errors.Is(err, ErrLockedOut) {
-			code = "wait"
+			errCode = "wait"
 		} else {
-			Audit(username, "login.fail", clientIP(r))
+			Audit(username, "login.fail", ip)
 		}
-		http.Redirect(w, r, "/login?error="+code+"&next="+url.QueryEscape(next), http.StatusFound)
+		failTo(errCode)
 		return
 	}
 
-	token, err := CreateSession(user.Username)
+	var deviceID int64
+	if device != nil {
+		deviceID = device.ID
+	}
+	if useCode {
+		// 番号とパスワードがそろったので、この端末を登録する。
+		if !consumeDeviceCode(user.Username, code) {
+			failTo("code")
+			return
+		}
+		id, deviceToken, err := registerDevice(user.Username, cleanDeviceName(r.FormValue("device_name")), ip)
+		if err != nil {
+			http.Error(w, "端末を登録できませんでした", http.StatusInternalServerError)
+			return
+		}
+		setDeviceCookie(w, deviceToken)
+		deviceID = id
+	}
+
+	token, err := createSessionOn(user.Username, deviceID)
 	if err != nil {
 		http.Error(w, "セッションの作成に失敗しました", http.StatusInternalServerError)
 		return
 	}
 	setSessionCookie(w, token)
 	// 誰が・いつ・どこから入ってきたかを残す（要件定義書 §2.3）。
-	Audit(user.Username, "login", clientIP(r))
+	Audit(user.Username, "login", ip)
+	if outside && deviceID == 0 {
+		// 断らない設定のあいだに、登録のない端末で社外から入った印（切り替えの前に、これが無くなるのを確かめる）。
+		Audit(user.Username, "login.unregistered-device", ip)
+	}
 	// 元のページへ戻す。匿名の404から来た人がログインしたその足で目的地へ着く
 	// ——これが無いと、社員どうしのアドレス共有が行き止まりになる。
 	http.Redirect(w, r, next, http.StatusFound)

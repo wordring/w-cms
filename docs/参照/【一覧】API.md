@@ -326,6 +326,10 @@ JSONにならなければ、本文をそのまま理由にします。
 | POST | `/api/logout` | 要認証 | ログアウト（セッション行を削除）。**POST限定**（GETは405）。`/api/new-page` と同じ保存型CSRFで、本文の `<img src="/api/logout">` 1つで開いた全員を無音で追い出せたため |
 | GET | `/api/me` | 任意認証 | 認証状態。未認証は `{authenticated:false}` |
 | GET / POST | `/api/session` | 要認証 | セッションが失効するまでの残り（2026-10-14）。返すのは `{expires_in, idle_ttl, warn_before}` で、単位は秒。**GET は寿命を延ばさない**。画面 `assets/session.js` が、失効の5分前の告知のために見る。**POST は告知の「続ける」**で、操作として寿命を延ばす（CSRF の検査あり）。失効していれば 401 |
+| GET | `/api/devices` | 要認証 | 端末の一覧といまの状態（2026-10-31）。管理者は `?all=1` で全員の分。業務サーバーの中の入口では 403 |
+| POST | `/api/devices/register` | 要認証 | いま開いている端末を登録する。`{name, code}`。社内は番号なし（数字の住所では 409）、社外は一回限りの番号が要る（違えば 403） |
+| POST | `/api/devices/code` | 要認証 | ほかの端末を足す番号を出す（8桁・10分）。社外は登録した端末からだけ |
+| POST | `/api/devices/revoke` | 要認証 | 端末を取り消し、そのセッションも消す。`{id}`。本人か管理者。社外は登録した端末からだけ |
 
 ## 6. 管理（admin限定）
 

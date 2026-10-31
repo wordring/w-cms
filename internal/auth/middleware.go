@@ -72,12 +72,17 @@ func userFromRequest(w http.ResponseWriter, r *http.Request) *User {
 	if err != nil {
 		return nil
 	}
+	// 社外からは、登録した端末のセッションだけを通します（断る設定のとき・device.go）。寿命を延ばす前に見る。
+	if !deviceGateOK(c.Value, r) {
+		return nil
+	}
 	username, _, renewed, ok := resolveSession(c.Value, isOperation(r))
 	if !ok {
 		return nil
 	}
 	if renewed {
 		setSessionCookie(w, c.Value)
+		touchDevice(w, r, username)
 	}
 	u, err := LookupUser(username)
 	if err != nil {

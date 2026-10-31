@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>w-cms 端末の登録</title>
+<!-- 端末の登録（2026-10-31・docs/考察/【考察】端末の登録.md）。スタイル・スクリプトは外部ファイル（CSP strict のため）。 -->
+<link rel="stylesheet" href="/assets/tables.css">
+<link rel="stylesheet" href="/assets/session.css">
+</head>
+<body>
+  <a class="back" href="/">← エディタに戻る</a>
+  <h1>📱 端末の登録</h1>
+  <p class="hint">社外から w-cms にログインするには、パソコンやスマホの登録が要ります。登録はブラウザごとです。</p>
+
+  <div class="card">
+    <h2 class="dev-h2">この端末</h2>
+    <p id="dev-state"></p>
+    <div id="dev-register" class="row is-hidden">
+      <label>名前 <input id="dev-name" maxlength="60" placeholder="例: 事務所のパソコン"></label>
+      <label id="dev-code-label" class="is-hidden">番号 <input id="dev-code" inputmode="numeric" autocomplete="one-time-code"></label>
+      <button id="dev-register-btn" type="button">この端末を登録</button>
+    </div>
+    <p id="dev-register-msg" class="dev-msg"></p>
+  </div>
+
+  <div id="dev-issue" class="card is-hidden">
+    <h2 class="dev-h2">ほかの端末を足す</h2>
+    <p class="hint">社内へ持って行けない端末のための番号です。1回だけ使えて、10分で切れます。足す端末のログインの画面に入れてください。</p>
+    <div class="row">
+      <button id="dev-issue-btn" type="button" class="sub">番号を出す</button>
+      <strong id="dev-issued" class="dev-code"></strong>
+    </div>
+    <p id="dev-issue-msg" class="dev-msg"></p>
+  </div>
+
+  <div class="card">
+    <h2 class="dev-h2">登録した端末</h2>
+    <label id="dev-all-label" class="hint is-hidden"><input id="dev-all" type="checkbox"> 全員の分を見る</label>
+    <div class="result-scroll">
+      <table id="dev-table">
+        <thead><tr><th>名前</th><th id="dev-user-head" class="is-hidden">利用者</th><th>登録した日</th><th>最後に使った日</th><th>最後の接続元</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <p id="dev-empty" class="hint is-hidden">登録した端末はありません。</p>
+    <p id="dev-list-msg" class="dev-msg"></p>
+  </div>
+
+  <script src="/assets/session.js"></script>
+  <script src="/assets/devices.js"></script>
+</body>
+</html>

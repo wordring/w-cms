@@ -92,7 +92,7 @@ collect_server() {
 		echo "### 持ち主の付け替え（だれが・だれへ・何件）"
 		adb -separator ' ' "$db" "select count(*), username, '→', substr(target, instr(target,'->')+2) from audit_log where substr(ts,1,19) >= '$from' and action = 'chown' group by 2, 4 order by 1 desc limit 20"
 		echo "### 利用者・権限・削除・機械の入口にかかわる操作（新しい順に40件まで）"
-		adb -separator ' | ' "$db" "select substr(ts,1,19), username, action, substr(target,1,100) from audit_log where substr(ts,1,19) >= '$from' and (action like 'user.%' or action like 'group.%' or action like '%perm%' or action like '%delete%' or action like 'machine.%' or action like 'admin.%' or action like 'lock.force%' or action like 'data.%') order by rowid desc limit 40"
+		adb -separator ' | ' "$db" "select substr(ts,1,19), username, action, substr(target,1,100) from audit_log where substr(ts,1,19) >= '$from' and (action like 'user.%' or action like 'group.%' or action like '%perm%' or action like '%delete%' or action like 'machine.%' or action like 'admin.%' or action like 'lock.force%' or action like 'data.%' or action like 'device.%' or action = 'login.unregistered-device') order by rowid desc limit 40"
 	else
 		echo "（監査の記録を読めない）"
 	fi

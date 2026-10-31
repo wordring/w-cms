@@ -271,6 +271,11 @@ func buildHandler() http.Handler {
 	protected.HandleFunc("/api/logout", auth.LogoutAPIHandler)
 	// 失効までの残り時間（画面が失効の5分前に告知する・GET は寿命を延ばさない・POST は「続ける」——2026-10-14）。
 	protected.HandleFunc(auth.SessionAPIPath, auth.SessionAPIHandler)
+	// 端末の登録（2026-10-31・internal/auth/device.go・画面は assets/devices.html）。
+	protected.HandleFunc("/api/devices", auth.DevicesAPIHandler)
+	protected.HandleFunc("/api/devices/register", auth.DeviceRegisterAPIHandler)
+	protected.HandleFunc("/api/devices/code", auth.DeviceCodeAPIHandler)
+	protected.HandleFunc("/api/devices/revoke", auth.DeviceRevokeAPIHandler)
 
 	// オートコンプリート——何度も入力される定型的な値を、暇なときに数えて置いたもの（読めるページだけ・2026-10-19・autocomplete.go）。
 	// それまでの `/api/suggest`（`推奨業者` などの候補の出どころ）は、2026-10-19 にこれへ統一して外した。

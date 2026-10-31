@@ -19,3 +19,5 @@ button { width:100%; margin-top:1.2rem; padding:.6rem; background:#2563eb; color
 }
 .notfound-card h1 { margin: 0 0 12px; font-size: 20px; }
 .notfound-card p { margin: 8px 0; color: #475569; }
+/* 社外の登録のない端末への案内（2026-10-31）。 */
+.device-note { font-size: 13px; color: #475569; margin: 12px 0 4px; line-height: 1.5; }

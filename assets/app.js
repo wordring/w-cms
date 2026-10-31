@@ -607,6 +607,7 @@
             // 検索画面（表を探す・2026-09-25）はログインした人なら誰でも使える
             // （サーバーが読めるページの行だけ返す）。匿名には出さない。
             setHidden(document.getElementById('w-tables-link'), false);
+            setHidden(document.getElementById('w-devices-link'), false); // 端末の登録（2026-10-31）
             // メールの一覧（2026-09-29）の入口は、2026-10-20 から通信の拡張の JS が足す（ext/comm/assets/comm.js）。
         } catch (e) { /* 通信エラー等は無視（編集UIは権限取得時に再判定） */ }
     }
